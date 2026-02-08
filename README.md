@@ -86,6 +86,29 @@ Akses: http://localhost:3000
 
 Plus opsi 60fps untuk video yang support!
 
+## Deploy ke Render.com
+
+Aplikasi ini siap di-deploy ke Render.com secara gratis!
+
+### Quick Deploy
+
+1. Push project ke GitHub
+2. Buat akun di [Render.com](https://render.com)
+3. Klik "New Web Service"
+4. Connect repository GitHub Anda
+5. Render akan otomatis detect konfigurasi dari `render.yaml`
+6. Klik "Create Web Service"
+
+Lihat panduan lengkap di [render-deployment.md](render-deployment.md)
+
+### Konfigurasi Otomatis
+
+File `render.yaml` sudah dikonfigurasi dengan:
+- ✅ Node.js environment
+- ✅ Auto-install dependencies
+- ✅ Auto-download yt-dlp
+- ✅ Free plan ready
+
 ## Troubleshooting
 
 ### yt-dlp tidak ditemukan

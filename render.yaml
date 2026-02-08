@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: ciku-downloader
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        sync: false
