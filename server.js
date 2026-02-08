@@ -14,6 +14,12 @@ const ytDlpPath = path.join(__dirname, 'bin', 'yt-dlp.exe');
 // Initialize yt-dlp dengan path custom
 let ytDlp;
 
+// Buat folder temp jika belum ada
+const tempDir = path.join(__dirname, 'temp');
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir);
+}
+
 // Function untuk download yt-dlp jika belum ada
 async function ensureYtDlp() {
   const binDir = path.join(__dirname, 'bin');
@@ -114,10 +120,10 @@ app.post('/api/info', async (req, res) => {
   }
 });
 
-// Endpoint untuk download video
-app.get('/api/download', async (req, res) => {
+// Endpoint untuk mempersiapkan download (pemrosesan merging)
+app.post('/api/prepare', async (req, res) => {
   try {
-    const { url, format_id } = req.query;
+    const { url, format_id } = req.body;
 
     if (!url) {
       return res.status(400).json({ error: 'URL video diperlukan' });
@@ -135,11 +141,10 @@ app.get('/api/download', async (req, res) => {
     // Deteksi apakah ini audio download
     const isAudio = format_id && (format_id.includes('audio') || format_id === 'bestaudio' || format_id === 'worstaudio');
     const fileExtension = isAudio ? '.mp3' : '.mp4';
-    const contentType = isAudio ? 'audio/mpeg' : 'video/mp4';
 
-    // Set headers untuk download
-    res.header('Content-Disposition', `attachment; filename="${title}${fileExtension}"`);
-    res.header('Content-Type', contentType);
+    // Generate temporary file path
+    const tempFileName = `${Date.now()}-${title}${fileExtension}`;
+    const tempFilePath = path.join(tempDir, tempFileName);
 
     // Download options
     const downloadOptions = isAudio ? [
@@ -147,36 +152,74 @@ app.get('/api/download', async (req, res) => {
       '--audio-format', 'mp3',
       '--audio-quality', '0',
       '--format', format_id || 'bestaudio',
-      '--output', '-',
+      '--output', tempFilePath,
       url
     ] : [
-      '--format', format_id || 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      // Untuk video: format_id+bestaudio, fallback ke best
+      '--format', format_id ? `${format_id}+bestaudio[ext=m4a]/best` : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
       '--merge-output-format', 'mp4',
-      '--output', '-',
+      '--output', tempFilePath,
       url
     ];
 
-    // Stream video/audio langsung ke response
-    const ytDlpProcess = ytDlp.execStream(downloadOptions);
+    console.log('Prepare request:', { url, format_id, isAudio });
+
+    // Download menggunakan .exec() untuk menunggu prosess selesai (merging)
+    const ytDlpProcess = ytDlp.exec(downloadOptions);
 
     ytDlpProcess.on('error', (error) => {
       console.error('yt-dlp error:', error);
+      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Gagal mendownload video' });
+        res.status(500).json({ error: 'Gagal memproses video' });
       }
     });
 
-    ytDlpProcess.pipe(res);
+    ytDlpProcess.on('close', () => {
+      if (fs.existsSync(tempFilePath)) {
+        res.json({
+          success: true,
+          file: tempFileName,
+          title: `${title}${fileExtension}`
+        });
+      } else {
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Proses gagal, file tidak ditemukan' });
+        }
+      }
+    });
 
   } catch (error) {
     console.error('Error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        error: 'Gagal mendownload video. Pastikan URL valid dan video tersedia.'
-      });
-    }
+    res.status(500).json({
+      error: 'Gagal memproses video. Pastikan URL valid dan video tersedia.'
+    });
   }
 });
+
+// Endpoint untuk mengambil file hasil proses
+app.get('/api/get-file', (req, res) => {
+  const { file } = req.query;
+  if (!file) return res.status(400).send('File parameter required');
+
+  const filePath = path.join(tempDir, file);
+
+  if (fs.existsSync(filePath)) {
+    res.download(filePath, file, (err) => {
+      // Hapus file temp setelah dikirim
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      if (err) {
+        console.error('Error sending file:', err);
+      }
+    });
+  } else {
+    res.status(404).send('File not found or already deleted');
+  }
+});
+
+
 
 // Start server dengan auto-download yt-dlp
 async function startServer() {

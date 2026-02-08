@@ -105,6 +105,7 @@ form.addEventListener('submit', async (e) => {
     submitBtn.disabled = true;
     videoInfo.classList.add('hidden');
     message.classList.add('hidden');
+    document.getElementById('processingMsg').classList.add('hidden');
 
     try {
         const response = await fetch('/api/info', {
@@ -153,22 +154,51 @@ downloadBtn.addEventListener('click', async () => {
     if (!currentVideoUrl) return;
 
     const format_id = document.getElementById('qualitySelect').value;
+    const processingMsg = document.getElementById('processingMsg');
 
     try {
-        // Buat URL download dengan format_id
-        const downloadUrl = `/api/download?url=${encodeURIComponent(currentVideoUrl)}&format_id=${format_id}`;
+        // Set loading state for download button
+        downloadBtn.classList.add('loading');
+        downloadBtn.disabled = true;
+        processingMsg.classList.remove('hidden');
 
-        // Trigger download
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = '';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        // Step 1: Prepare the download (merging/processing)
+        const prepareResponse = await fetch('/api/prepare', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                url: currentVideoUrl,
+                format_id: format_id
+            })
+        });
 
-        showMessage('Download dimulai! Cek folder Downloads Anda.', 'success');
+        const prepareData = await prepareResponse.json();
+
+        if (!prepareResponse.ok) {
+            throw new Error(prepareData.error || 'Gagal memproses video');
+        }
+
+        // Step 2: Download the prepared file
+        if (prepareData.success && prepareData.file) {
+            // Sembunyikan loading/processing UI
+            processingMsg.classList.add('hidden');
+            downloadBtn.classList.remove('loading');
+            downloadBtn.disabled = false;
+
+            showMessage('Proses selesai! Download dimulai...', 'success');
+
+            // Trigger download menggunakan endpoint get-file
+            const downloadUrl = `/api/get-file?file=${encodeURIComponent(prepareData.file)}`;
+            window.location.assign(downloadUrl);
+        }
+
     } catch (error) {
-        showMessage('Gagal mendownload video. Silakan coba lagi.', 'error');
+        showMessage(error.message || 'Gagal mendownload video. Silakan coba lagi.', 'error');
+        downloadBtn.classList.remove('loading');
+        downloadBtn.disabled = false;
+        processingMsg.classList.add('hidden');
     }
 });
 
